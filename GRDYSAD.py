@@ -14,6 +14,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def load_keel_dat(file_path):
+    # This function loads a KEEL dataset from a .dat file
     with open(file_path, 'r') as f:
         lines = [line.strip() for line in f if not line.startswith('@')]
     data = [line.split(',') for line in lines if line]
@@ -26,6 +27,7 @@ def load_keel_dat(file_path):
 
 
 def calculate_gmean(y_true, y_pred):
+    # Calculate the geometric mean of sensitivity and specificity
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
     sens = tp / (tp + fn) if (tp + fn) > 0 else 0
     spec = tn / (tn + fp) if (tn + fp) > 0 else 0
@@ -37,6 +39,7 @@ class OverSample:
         self.random_state = random_state
 
     def _determine_clusters(self, X):
+        # Use BIC to determine the number of clusters
         min_clusters = 2
         max_clusters = min(10, len(X) - 1)
         best_bic = np.inf
@@ -51,6 +54,7 @@ class OverSample:
         return best_n
 
     def _generate_samples(self, X_min, clusters, n_samples):
+        # Generate synthetic samples using linear interpolation
         synthetic = []
         rng = np.random.default_rng(self.random_state)
         for cluster_id in np.unique(clusters):
@@ -88,19 +92,24 @@ class OverSample:
 
 
 def construct_graph(X, y, t=1.0):
+    # A graph and its Laplacian matrix are constructed based on the input feature data and labels
     n = len(X)
     G = np.zeros((n, n))
+
+    # Iterate over pairs of samples and compute the similarity between samples with the same label
     for i in range(n):
         for j in range(n):
             if y[i] == y[j]:
                 dist = np.linalg.norm(X[i] - X[j]) ** 2
-                G[i, j] = np.exp(-dist / t)
+                G[i, j] = np.exp(-dist / t)  # Gaussian kernel to calculate similarity
     D = np.diag(G.sum(axis=1))
-    L = D - G
+    L = D - G  # Laplacian matrix L = D-G
     return G, L
 
 
 def graph_regularized_projection(X, L, gamma=1e-2, d=8):
+    # The graph Laplacian matrix is used for feature dimensionality
+    # Reduction to emphasize the local geometric structure of the data
     XLX = X.T @ L @ X
     A = XLX + gamma * np.eye(X.shape[1])
     eigvals, eigvecs = np.linalg.eigh(A)
@@ -109,6 +118,7 @@ def graph_regularized_projection(X, L, gamma=1e-2, d=8):
 
 
 def stump_classify(data_matrix, dim, thresh, inequal):
+    # Classify data based on a single feature and threshold
     ret = np.ones(data_matrix.shape[0])
     if inequal == 'lt':
         ret[data_matrix[:, dim] <= thresh] = -1.0
@@ -118,6 +128,7 @@ def stump_classify(data_matrix, dim, thresh, inequal):
 
 
 def build_stump(X, y, D):
+    # Build a decision stump
     m, n = X.shape
     best_stump = {}
     best_pred = np.zeros(m)
@@ -137,6 +148,7 @@ def build_stump(X, y, D):
 
 
 def compute_group_weights(H, iteration, num_iter):
+    # Compute group weights based on the current iteration and the number of iterations
     boundary_threshold = 0.6
     bins = [0, 0.4, boundary_threshold, 1.0]
     groups = np.digitize(H, bins) - 1
@@ -166,6 +178,7 @@ def compute_group_weights(H, iteration, num_iter):
 
 
 def ada_boost_train_dynamic(X, y, num_iter, random_state):
+    # Train the AdaBoost classifier with dynamic sampling
     classes = np.unique(y)
     pos, neg = classes[0], classes[1]
     y_enc = np.where(y == pos, 1, -1)
@@ -174,6 +187,7 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
     agg_est = np.zeros(m)
     classifiers, betas = [], []
 
+    # Calculate the class imbalance ratio
     classes, counts = np.unique(y, return_counts=True)
     minority_class = classes[np.argmin(counts)]
     majority_class = classes[np.argmax(counts)]
@@ -187,6 +201,8 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
         P_wrong = 1 - P_correct
         H = 1 - (P_correct - P_wrong)
         H = H / 2.0
+        # In binary classification, this doesn't require such a complex calculation
+        # but I didn't change it because I was afraid of an error
 
         groups, w_norm = compute_group_weights(H, i, num_iter)
 
@@ -200,6 +216,7 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
         maj_groups = groups[maj_idx]
         sampled_maj = []
 
+        # Sample each group based on its sample confidence
         for j in range(3):
             group_idx = maj_idx[maj_groups == j]
             Nj = int(Ntarget * w_norm[j])
@@ -208,6 +225,7 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
                 sampled = np.random.choice(group_idx, Nj, replace=replace)
                 sampled_maj.extend(sampled)
 
+        # If the number of samples is insufficient, replenish the remaining samples
         if len(sampled_maj) < Ntarget:
             remaining = np.setdiff1d(maj_idx, sampled_maj)
             sampled_maj.extend(np.random.choice(remaining, Ntarget - len(sampled_maj), replace=True))
@@ -221,6 +239,7 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
         except ValueError:
             X_res, y_res = X_group, y_group
 
+        # Build graph and Laplacian matrix, perform graph regularized projection
         G, L = construct_graph(X_res, y_res)
         d_proj = min(X.shape[1], 8)
         P = graph_regularized_projection(X_res, L, gamma=1e-2, d=d_proj)
@@ -236,12 +255,13 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
         betas.append(beta)
 
         pred = stump_classify(X_full_proj, stump['dim'], stump['thresh'], stump['ineq'])
-        agg_est += beta * pred
+        agg_est += beta * pred  # Weighted combination of weak classifiers
 
     return classifiers, betas, label_map
 
 
 def ada_classify(X, classifiers, betas, label_map):
+    # Classify data using the trained classifiers
     agg = np.zeros(X.shape[0])
     for clf in classifiers:
         P = clf['P']
@@ -253,6 +273,7 @@ def ada_classify(X, classifiers, betas, label_map):
 
 
 def run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.2):
+    # Run repeated holdout cross-validation for IHD datasets experiment
     metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'gmean': [], 'auc': []}
 
     for i in range(repeat):
@@ -280,6 +301,7 @@ def run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.2):
 
 
 def run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test):
+    # For KEEL datasets, because the training and testing sets are already given
     metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'gmean': [], 'auc': []}
 
     clf, betas, lm = ada_boost_train_dynamic(X_train, y_train, 30, random_state=42)
