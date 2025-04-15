@@ -17,10 +17,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class OverSample(BaseEstimator, TransformerMixin):
+    # Initialize method
     def __init__(self, random_state=42):
         self.random_state = random_state
         self.valid_clusters_ = []
 
+    # The optimal number of clusters is automatically determined using BIC
     def _determine_clusters(self, X):
         min_clusters = 2
         max_clusters = min(10, len(X) - 1)
@@ -35,6 +37,7 @@ class OverSample(BaseEstimator, TransformerMixin):
                 best_n = n
         return best_n
 
+    # New minority samples are synthesized according to the clustering results
     def _generate_samples(self, X_min, clusters, n_samples):
         synthetic = []
         rng = check_random_state(self.random_state)
@@ -44,9 +47,11 @@ class OverSample(BaseEstimator, TransformerMixin):
             if len(cluster_data) < 2:
                 continue
 
+            # Calculate (proportionally) the number of samples that should be synthesized for this cluster
             cluster_ratio = len(cluster_data) / len(X_min)
             n_cluster_samples = int(n_samples * cluster_ratio)
 
+            # Randomly select two samples from the cluster for linear interpolation
             for _ in range(n_cluster_samples):
                 i1, i2 = rng.choice(len(cluster_data), 2, replace=False)
                 point1 = cluster_data[i1]
@@ -85,6 +90,7 @@ class OverSample(BaseEstimator, TransformerMixin):
 
 
 def stump_classify(data_matrix, dim, thresh, inequal):
+    # Classify data based on a single feature and threshold
     m = data_matrix.shape[0]
     ret = np.ones(m)
     if inequal == 'lt':
@@ -95,6 +101,7 @@ def stump_classify(data_matrix, dim, thresh, inequal):
 
 
 def build_stump(X, y, D):
+    # Build a decision stump
     m, n = X.shape
     best_stump = {}
     best_est = np.zeros(m)
@@ -115,6 +122,7 @@ def build_stump(X, y, D):
 
 
 def compute_group_weights(H, iteration, num_iter):
+    # Compute group weights based on the current iteration and the number of iterations
     boundary_threshold = 0.6
     bins = [0, 0.4, boundary_threshold, 1.0]
     groups = np.digitize(H, bins) - 1
@@ -145,6 +153,7 @@ def compute_group_weights(H, iteration, num_iter):
 
 
 def ada_boost_train_dynamic(X, y, num_iter=30):
+    # Train the AdaBoost classifier with dynamic sampling
     classes = np.unique(y)
     if len(classes) != 2:
         raise ValueError('NOT BINARY CLASSIFICATION')
@@ -167,10 +176,11 @@ def ada_boost_train_dynamic(X, y, num_iter=30):
         P_wrong = 1 - P_correct
         H = 1 - (P_correct - P_wrong)
         H = H / 2.0
+        # In binary classification, this doesn't require such a complex calculation
+        # but I didn't change it because I was afraid of an error
 
         groups, w_norm = compute_group_weights(H, i, num_iter)
         N_minority = sum(y == minority_class)
-        N_majority = sum(y == majority_class)
 
         Ntarget = int(N_minority * 1.2)
 
@@ -185,6 +195,7 @@ def ada_boost_train_dynamic(X, y, num_iter=30):
                 sampled = np.random.choice(group_idx, min(Nj, len(group_idx)), replace=False)
                 sampled_maj.extend(sampled)
 
+        # If not enough, fill in the sample
         if len(sampled_maj) < Ntarget:
             remaining = np.setdiff1d(maj_idx, sampled_maj)
             sampled_maj.extend(np.random.choice(remaining, Ntarget - len(sampled_maj), replace=False))
@@ -213,6 +224,7 @@ def ada_boost_train_dynamic(X, y, num_iter=30):
 
 
 def ada_classify(X, classifiers, betas, label_map):
+    # Classify data using the trained classifiers
     agg = np.zeros(X.shape[0])
     for stump, beta in zip(classifiers, betas):
         agg += beta * stump_classify(X, stump['dim'], stump['thresh'], stump['ineq'])
@@ -221,6 +233,7 @@ def ada_classify(X, classifiers, betas, label_map):
 
 
 def calculate_gmean(y_true, y_pred):
+    # Calculate the geometric mean of sensitivity and specificity
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
     sens = tp / (tp + fn) if (tp + fn) else 0
     spec = tn / (tn + fp) if (tn + fp) else 0
@@ -229,7 +242,7 @@ def calculate_gmean(y_true, y_pred):
 
 if __name__ == '__main__':
 
-    data = pd.read_csv('Experiment1/10Ydata.csv').iloc[:, 1:]
+    data = pd.read_csv('Experiment1/7Ydata.csv').iloc[:, 1:]
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
 
@@ -286,7 +299,7 @@ if __name__ == '__main__':
     stats_df = pd.DataFrame(stats_data)
 
     raw_data = []
-    for run in range(10):
+    for run in range(5):
         for metric in results.keys():
             raw_data.append({
                 'Run': run + 1,
@@ -298,8 +311,3 @@ if __name__ == '__main__':
 
     print('==== Result ====')
     print(stats_df)
-
-    output_file = 'Experiment1/10Ydata_DYSAD.xlsx'
-    with pd.ExcelWriter(output_file) as writer:
-        stats_df.to_excel(writer, sheet_name='Statistics', index=False)
-        raw_df.to_excel(writer, sheet_name='Raw_Data', index=False)
