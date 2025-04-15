@@ -168,7 +168,6 @@ def ada_boost_train_dynamic(X, y, num_iter=30):
 
     classes, counts = np.unique(y, return_counts=True)
     minority_class = classes[np.argmin(counts)]
-    majority_class = classes[np.argmax(counts)]
 
     for i in range(1, num_iter + 1):
         p = 1 / (1 + np.exp(-agg_est))
@@ -176,8 +175,6 @@ def ada_boost_train_dynamic(X, y, num_iter=30):
         P_wrong = 1 - P_correct
         H = 1 - (P_correct - P_wrong)
         H = H / 2.0
-        # In binary classification, this doesn't require such a complex calculation
-        # but I didn't change it because I was afraid of an error
 
         groups, w_norm = compute_group_weights(H, i, num_iter)
         N_minority = sum(y == minority_class)
