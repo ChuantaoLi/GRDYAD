@@ -11,18 +11,20 @@ from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_sco
 from sklearn.model_selection import train_test_split
 import os
 
-os.environ["LOKY_MAX_CPU_COUNT"] = "8"
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
+os.environ["LOKY_MAX_CPU_COUNT"] = "8"  # A maximum of 8 CPU cores are used
+warnings.filterwarnings("ignore", category=ConvergenceWarning)  # Ignoring convergence warnings
+warnings.filterwarnings("ignore", category=UserWarning)  # Ignore user-level warnings
 
 
 class OverSample(BaseEstimator, TransformerMixin):
     def __init__(self, method='cluster', random_state=42):
+        # Initialize method
         self.method = method
         self.random_state = random_state
         self.valid_clusters_ = []
 
     def _determine_clusters(self, X):
+        # The optimal number of clusters is automatically determined using BIC
         min_clusters = 2
         max_clusters = min(10, len(X) - 1)
         best_bic = np.inf
@@ -37,6 +39,7 @@ class OverSample(BaseEstimator, TransformerMixin):
         return best_n
 
     def _generate_samples(self, X_min, clusters, n_samples):
+        # New minority samples are synthesized according to the clustering results
         synthetic = []
         rng = check_random_state(self.random_state)
 
@@ -45,9 +48,11 @@ class OverSample(BaseEstimator, TransformerMixin):
             if len(cluster_data) < 2:
                 continue
 
+            # Calculate (proportionally) the number of samples that should be synthesized for this cluster
             cluster_ratio = len(cluster_data) / len(X_min)
             n_cluster_samples = int(n_samples * cluster_ratio)
 
+            # Randomly select two samples from the cluster for linear interpolation
             for _ in range(n_cluster_samples):
                 i1, i2 = rng.choice(len(cluster_data), 2, replace=False)
                 point1 = cluster_data[i1]
@@ -59,6 +64,7 @@ class OverSample(BaseEstimator, TransformerMixin):
         return np.array(synthetic)[:n_samples]
 
     def _generate_samples_smote(self, X_min, n_samples):
+        # Generate samples using SMOTE
         if n_samples <= 0 or len(X_min) == 0:
             return np.zeros((0, X_min.shape[1]))
 
@@ -72,6 +78,7 @@ class OverSample(BaseEstimator, TransformerMixin):
         return np.array(synthetic)
 
     def fit_resample(self, X, y):
+        # Fit the resampled data
         X, y = check_X_y(X, y)
         classes = np.unique(y)
 
@@ -89,11 +96,13 @@ class OverSample(BaseEstimator, TransformerMixin):
             return X, y
 
         elif self.method == 'cluster':
+            # Generate samples using clustering
             n_clusters = self._determine_clusters(X_min)
             gmm = GaussianMixture(n_components=n_clusters, random_state=self.random_state)
             clusters = gmm.fit_predict(X_min)
             synthetic_X = self._generate_samples(X_min, clusters, n_to_generate)
         elif self.method == 'smote':
+            # Generate samples using SMOTE
             synthetic_X = self._generate_samples_smote(X_min, n_to_generate)
 
         synthetic_y = np.full(len(synthetic_X), minority_class)
@@ -101,16 +110,18 @@ class OverSample(BaseEstimator, TransformerMixin):
 
 
 def stump_classify(data_matrix, dim, thresh, inequal):
+    # Decision tree classifier
     m = data_matrix.shape[0]
     ret = np.ones(m)
     if inequal == 'lt':
-        ret[data_matrix[:, dim] <= thresh] = -1.0
+        ret[data_matrix[:, dim] <= thresh] = -1.0  # Values less than or equal to the threshold are set to -1
     else:
-        ret[data_matrix[:, dim] > thresh] = -1.0
+        ret[data_matrix[:, dim] > thresh] = -1.0  # Values greater than the threshold are set to -1
     return ret
 
 
 def build_stump(X, y, D):
+    # Construct an optimal one-level decision tree
     m, n = X.shape
     best_stump = {}
     best_est = np.zeros(m)
@@ -131,8 +142,9 @@ def build_stump(X, y, D):
 
 
 def compute_group_weights(H, iteration, num_iter):
+    # Sample confidence calculation
     boundary_threshold = 0.6
-    bins = [0, 0.4, boundary_threshold, 1.0]
+    bins = [0, 0.4, boundary_threshold, 1.0]  # Set the confidence margin threshold
     groups = np.digitize(H, bins) - 1
     groups = np.clip(groups, 0, 2)
 
@@ -145,22 +157,26 @@ def compute_group_weights(H, iteration, num_iter):
     i, n = iteration, num_iter
     alpha = np.tan((i - 1) * np.pi / (2 * n))
 
+    # Calculate beta with the sigmoid function
     gamma = 0.1
     beta = 1 / (1 + np.exp(-gamma * ((2 * i / n) - 1)))
 
+    # The dynamic offset delta of each group is adjusted according to the average confidence C bar
     delta = np.zeros(3)
     for j in range(3):
-        if (C_bar[j] < 0.5) or (C_bar[j] > boundary_threshold):
+        if (C_bar[j] < 0.4) or (C_bar[j] > boundary_threshold):
             delta[j] = alpha
         else:
             delta[j] = beta * alpha
 
+    # The inverse weight of the group is calculated according to C bar + delta
     w = 1.0 / (C_bar + delta + 1e-8)
     w_norm = w / w.sum()
     return groups, w_norm
 
 
 def ada_boost_train_dynamic(X, y, num_iter=30, random_state=42, undersample_method='dynamic', oversample_method='dynamic'):
+    # AdaBoost training function
     classes = np.unique(y)
     if len(classes) != 2:
         raise ValueError('NOT BINARY CLASSIFICATION')
@@ -178,24 +194,28 @@ def ada_boost_train_dynamic(X, y, num_iter=30, random_state=42, undersample_meth
     minority_class = classes[np.argmin(counts)]
     majority_class = classes[np.argmax(counts)]
 
+    # Calculate the sample confidence
     for i in range(1, num_iter + 1):
         p = 1 / (1 + np.exp(-agg_est))
         P_correct = np.where(y_enc == 1, p, 1 - p)
         P_wrong = 1 - P_correct
         H = 1 - (P_correct - P_wrong)
         H = H / 2.0
+        # In binary classification, this doesn't require such a complex calculation
+        # but I didn't change it because I was afraid of an error
 
         if undersample_method == 'none':
             sampled_maj = np.where(y_enc == -1)[0]
         elif undersample_method == 'random':
+            # Random undersampling
             maj_idx = np.where(y_enc == -1)[0]
             N_minority = sum(y == minority_class)
             n_min = int(N_minority * 1.2)
             sampled_maj = maj_idx if len(maj_idx) <= n_min else rng.choice(maj_idx, n_min, replace=False)
         elif undersample_method == 'dynamic':
+            # Dynamic Undersampling with Sample Confidence
             groups, w_norm = compute_group_weights(H, i, num_iter)
             N_minority = sum(y == minority_class)
-            N_majority = sum(y == majority_class)
 
             Ntarget = int(N_minority * 1.2)
 
@@ -210,6 +230,7 @@ def ada_boost_train_dynamic(X, y, num_iter=30, random_state=42, undersample_meth
                     sampled = rng.choice(group_idx, min(Nj, len(group_idx)), replace=False)
                     sampled_maj.extend(sampled)
 
+            # # If not enough, fill in the sample
             if len(sampled_maj) < Ntarget:
                 remaining = np.setdiff1d(maj_idx, sampled_maj)
                 sampled_maj.extend(rng.choice(remaining, Ntarget - len(sampled_maj), replace=False))
@@ -220,10 +241,8 @@ def ada_boost_train_dynamic(X, y, num_iter=30, random_state=42, undersample_meth
         y_base = np.concatenate([y_enc[sampled_maj], y_enc[y_enc == 1]])
 
         if oversample_method != 'none':
-            overSample = OverSample(
-                method='smote' if oversample_method == 'smote' else 'cluster',
-                random_state=random_state
-            )
+            # SMOTE oversampling and GMM-based Dynamic oversampling
+            overSample = OverSample(method='smote' if oversample_method == 'smote' else 'cluster', random_state=random_state)
             try:
                 X_res, y_res = overSample.fit_resample(X_base, y_base)
             except Exception as e:
@@ -232,6 +251,7 @@ def ada_boost_train_dynamic(X, y, num_iter=30, random_state=42, undersample_meth
         else:
             X_res, y_res = X_base, y_base
 
+        # Building a stump classifier
         D_sub = np.ones(len(y_res)) / len(y_res)
         stump, error, _ = build_stump(X_res, y_res, D_sub)
 
@@ -251,6 +271,7 @@ def ada_boost_train_dynamic(X, y, num_iter=30, random_state=42, undersample_meth
 
 
 def ada_classify(X, classifiers, betas, label_map):
+    # AdaBoost classification function
     agg = np.zeros(X.shape[0])
     for stump, beta in zip(classifiers, betas):
         agg += beta * stump_classify(X, stump['dim'], stump['thresh'], stump['ineq'])
@@ -259,6 +280,7 @@ def ada_classify(X, classifiers, betas, label_map):
 
 
 def calculate_gmean(y_true, y_pred):
+    # Calculate G-Mean
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
     sens = tp / (tp + fn) if (tp + fn) else 0
     spec = tn / (tn + fp) if (tn + fp) else 0
@@ -308,7 +330,7 @@ def run_ablation_experiments(X_train, y_train, X_test, y_test, random_state):
 
 if __name__ == '__main__':
 
-    data = pd.read_csv('Experiment1/10Ydata.csv').iloc[:, 1:]
+    data = pd.read_csv('Experiment1/7Ydata.csv').iloc[:, 1:]
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
 
@@ -374,7 +396,7 @@ if __name__ == '__main__':
     print("\n==== Results (mean ± std) ====")
     print(stats_df)
 
-    output_file = 'Experiment1/10Ydata_Ablation.xlsx'
+    output_file = 'Experiment1/7Ydata_Ablation.xlsx'
     with pd.ExcelWriter(output_file) as writer:
         stats_df.to_excel(writer, sheet_name='Statistics', index=False)
         raw_df.to_excel(writer, sheet_name='Raw_Data', index=False)
