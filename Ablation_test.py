@@ -201,8 +201,6 @@ def ada_boost_train_dynamic(X, y, num_iter=30, random_state=42, undersample_meth
         P_wrong = 1 - P_correct
         H = 1 - (P_correct - P_wrong)
         H = H / 2.0
-        # In binary classification, this doesn't require such a complex calculation
-        # but I didn't change it because I was afraid of an error
 
         if undersample_method == 'none':
             sampled_maj = np.where(y_enc == -1)[0]
