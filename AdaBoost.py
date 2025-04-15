@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 
 
 def load_data(file_path):
+    # Read dat file
     data = []
     labels = []
     with open(file_path, 'r') as f:
@@ -17,6 +18,7 @@ def load_data(file_path):
 
 
 def stump_classify(data_matrix, dim, thresh_val, thresh_ineq):
+    # Decision tree classifier
     ret_array = np.ones((data_matrix.shape[0], 1))
     if thresh_ineq == "lt":
         ret_array[data_matrix[:, dim] <= thresh_val] = -1.0
@@ -26,6 +28,7 @@ def stump_classify(data_matrix, dim, thresh_val, thresh_ineq):
 
 
 def build_stump(data_arr, encoded_labels, D):
+    # Construct an optimal one-level decision tree
     data_matrix = np.mat(data_arr)
     label_mat = np.mat(encoded_labels).T
     m, n = data_matrix.shape
@@ -51,6 +54,7 @@ def build_stump(data_arr, encoded_labels, D):
 
 
 def ada_boost_train_ds(data_arr, class_labels, num_it):
+    # AdaBoost training function
     unique_labels = np.unique(class_labels)
     if len(unique_labels) != 2:
         raise ValueError("NOT BINARY CLASSIFICATION")
@@ -79,6 +83,7 @@ def ada_boost_train_ds(data_arr, class_labels, num_it):
 
 
 def ada_classify(data_to_class, classifier_arr, alpha_list, label_map):
+    # AdaBoost classification function
     data_matrix = np.mat(data_to_class)
     m = data_matrix.shape[0]
     agg_class_est = np.mat(np.zeros((m, 1)))
@@ -97,6 +102,7 @@ def ada_classify(data_to_class, classifier_arr, alpha_list, label_map):
 
 
 def calculate_gmean(y_true, y_pred):
+    # Calculate G-Mean
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
     sens = tp / (tp + fn) if (tp + fn) else 0
     spec = tn / (tn + fp) if (tn + fp) else 0
@@ -104,7 +110,7 @@ def calculate_gmean(y_true, y_pred):
 
 
 if __name__ == '__main__':
-    data = pd.read_csv('Experiment1/10Ydata.csv').iloc[:, 1:]
+    data = pd.read_csv('Experiment1/7Ydata.csv').iloc[:, 1:]
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
 
@@ -173,8 +179,3 @@ if __name__ == '__main__':
 
     print('==== Results ====')
     print(stats_df)
-
-    output_file = 'Experiment1/10Ydata_AdaBoost.xlsx'
-    with pd.ExcelWriter(output_file) as writer:
-        stats_df.to_excel(writer, sheet_name='Statistics', index=False)
-        raw_df.to_excel(writer, sheet_name='Raw_Data', index=False)
