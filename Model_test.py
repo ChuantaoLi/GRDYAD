@@ -1,7 +1,3 @@
-import warnings
-
-warnings.filterwarnings('ignore')
-
 import pandas as pd
 import numpy as np
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score
@@ -13,6 +9,9 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
+import warnings
+
+warnings.filterwarnings('ignore')
 
 
 def calculate_metrics(y_true, y_pred):
@@ -26,7 +25,7 @@ def calculate_metrics(y_true, y_pred):
     return auc, gmean
 
 
-data = pd.read_csv('Experiment1/10Ydata.csv').iloc[:, 1:]
+data = pd.read_csv('Experiment1/7Ydata.csv').iloc[:, 1:]
 X = data.iloc[:, :-1].values
 y = data.iloc[:, -1].values
 
@@ -97,7 +96,7 @@ results_df = results_df[column_order]
 print("\n Results (mean ± std):\n")
 print(results_df)
 
-output_file = 'Experiment1/10YModel_Model_test.xlsx'
+output_file = 'Experiment1/7YModel_Model_test.xlsx'
 with pd.ExcelWriter(output_file) as writer:
     results_df.to_excel(writer, sheet_name='Statistics', index=False)
 
