@@ -1,7 +1,8 @@
+'''Graph Regularized Dynamic sampling AdaBoost'''
 import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score, roc_auc_score, accuracy_score
+from sklearn.metrics import confusion_matrix, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.utils.validation import check_X_y
 from sklearn.exceptions import ConvergenceWarning
@@ -103,7 +104,7 @@ def construct_graph(X, y, t=1.0):
                 dist = np.linalg.norm(X[i] - X[j]) ** 2
                 G[i, j] = np.exp(-dist / t)  # Gaussian kernel to calculate similarity
     D = np.diag(G.sum(axis=1))
-    L = D - G  # Laplacian matrix L = D-G
+    L = D - G  # Laplacian matrix
     return G, L
 
 
@@ -270,9 +271,9 @@ def ada_classify(X, classifiers, betas, label_map):
     return np.where(pred_enc == 1, label_map[1], label_map[-1])
 
 
-def run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.2):
-    # Run repeated holdout cross-validation for IHD datasets experiment
-    metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'gmean': [], 'auc': []}
+def run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.3):
+    # Run repeated holdout cross-validation for Experiment1 datasets experiment
+    metrics = {'gmean': [], 'auc': []}
 
     for i in range(repeat):
         rs = random_state + i
@@ -280,14 +281,10 @@ def run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.2):
         classifiers, betas, label_map = ada_boost_train_dynamic(X_train, y_train, num_iter=30, random_state=rs)
         preds = ada_classify(X_test, classifiers, betas, label_map)
 
-        metrics['accuracy'].append(accuracy_score(y_test, preds))
-        metrics['precision'].append(precision_score(y_test, preds, average='macro', zero_division=0))
-        metrics['recall'].append(recall_score(y_test, preds, average='macro', zero_division=0))
-        metrics['f1'].append(f1_score(y_test, preds, average='macro', zero_division=0))
         metrics['gmean'].append(calculate_gmean(y_test, preds))
         metrics['auc'].append(roc_auc_score(y_test, preds))
 
-        print(f"[Run {i + 1}] Acc={metrics['accuracy'][-1]:.4f}, F1={metrics['f1'][-1]:.4f}, GMean={metrics['gmean'][-1]:.4f}, AUC={metrics['auc'][-1]:.4f}")
+        print(f"[Run {i + 1}] GMean={metrics['gmean'][-1]:.4f}, AUC={metrics['auc'][-1]:.4f}")
 
     print("\n=== Final Averaged Results ===")
     results = {}
@@ -300,29 +297,28 @@ def run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.2):
 
 def run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test):
     # For KEEL datasets, because the training and testing sets are already given
-    metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'gmean': [], 'auc': []}
+    metrics = {'gmean': [], 'auc': []}
 
     clf, betas, lm = ada_boost_train_dynamic(X_train, y_train, 30, random_state=42)
     preds = ada_classify(X_test, clf, betas, lm)
 
-    metrics['accuracy'].append(accuracy_score(y_test, preds))
-    metrics['precision'].append(precision_score(y_test, preds, average='macro', zero_division=0))
-    metrics['recall'].append(recall_score(y_test, preds, average='macro', zero_division=0))
-    metrics['f1'].append(f1_score(y_test, preds, average='macro', zero_division=0))
     metrics['gmean'].append(calculate_gmean(y_test, preds))
     metrics['auc'].append(roc_auc_score(y_test, preds))
 
-    print(f"Acc={metrics['accuracy'][-1]:.4f}, F1={metrics['f1'][-1]:.4f}, GMean={metrics['gmean'][-1]:.4f}, AUC={metrics['auc'][-1]:.4f}")
+    print(f"GMean={metrics['gmean'][-1]:.4f}, AUC={metrics['auc'][-1]:.4f}")
 
     return {k: (np.mean(v), np.std(v)) for k, v in metrics.items()}
 
 
 if __name__ == '__main__':
-    # X, y = load_keel_dat('Experiment2/yeast3.dat')
+    '''Read Experiment1 datasets'''
     data = pd.read_csv('Experiment1/10Ydata.csv').iloc[:, 1:]
+    # The first column is the patient number, which does not need to be read
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
+    results = run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.3)
+
+    '''Read Experiment2 datasets'''
     # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-5tra.dat')
     # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-5tst.dat')
-    results = run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.3)
     # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
