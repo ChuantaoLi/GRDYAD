@@ -1,14 +1,14 @@
+'''Dynamic oversampling and dynamic undersampling'''
 import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix,roc_auc_score
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_X_y
 from sklearn.model_selection import train_test_split
 import warnings
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, accuracy_score
 import os
 
 os.environ["LOKY_MAX_CPU_COUNT"] = "8"
@@ -240,14 +240,11 @@ def calculate_gmean(y_true, y_pred):
 if __name__ == '__main__':
 
     data = pd.read_csv('Experiment1/7Ydata.csv').iloc[:, 1:]
+    # The first column is the patient number, which does not need to be read
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
 
     results = {
-        'accuracy': [],
-        'precision': [],
-        'recall': [],
-        'f1': [],
         'gmean': [],
         'auc': []
     }
@@ -263,24 +260,12 @@ if __name__ == '__main__':
         classifiers, betas, label_map = ada_boost_train_dynamic(X_train, y_train, num_iter=30)
         preds = ada_classify(X_test, classifiers, betas, label_map)
 
-        acc = accuracy_score(y_test, preds)
-        macro_precision = precision_score(y_test, preds, average='macro', zero_division=0)
-        macro_recall = recall_score(y_test, preds, average='macro', zero_division=0)
-        macro_f1 = f1_score(y_test, preds, average='macro', zero_division=0)
         gmean = calculate_gmean(y_test, preds)
         auc = roc_auc_score(y_test, preds)
 
-        results['accuracy'].append(acc)
-        results['precision'].append(macro_precision)
-        results['recall'].append(macro_recall)
-        results['f1'].append(macro_f1)
         results['gmean'].append(gmean)
         results['auc'].append(auc)
 
-        print(f'Accuracy: {acc:.4f}')
-        print(f'Macro Precision: {macro_precision:.4f}')
-        print(f'Macro Recall: {macro_recall:.4f}')
-        print(f'Macro F1-score: {macro_f1:.4f}')
         print(f'G-Mean: {gmean:.4f}')
         print(f'AUC: {auc:.4f}')
         print()
