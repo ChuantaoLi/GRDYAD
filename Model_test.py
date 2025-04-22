@@ -1,9 +1,9 @@
+'''Machine Learning Models in comparison'''
 import pandas as pd
 import numpy as np
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score
+from sklearn.metrics import confusion_matrix, roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
@@ -32,7 +32,6 @@ y = data.iloc[:, -1].values
 models = {
     "Logistic Regression": LogisticRegression(),
     "KNN": KNeighborsClassifier(),
-    "Naive Bayes": GaussianNB(),
     "Decision Tree": DecisionTreeClassifier(),
     "Random Forest": RandomForestClassifier(),
     "Gradient Boosting": GradientBoostingClassifier(),
@@ -61,20 +60,10 @@ for run in range(N_RUNS):
         y_pred = model.predict(X_test)
 
         auc, gmean = calculate_metrics(y_test, y_pred)
-        report = classification_report(y_test, y_pred, output_dict=True)
-        accuracy = accuracy_score(y_test, y_pred)
-        macro_precision = report['macro avg']['precision']
-        macro_recall = report['macro avg']['recall']
-        macro_f1 = report['macro avg']['f1-score']
-
-        aggregated_results[name]['accuracy'].append(accuracy)
-        aggregated_results[name]['macro_precision'].append(macro_precision)
-        aggregated_results[name]['macro_recall'].append(macro_recall)
-        aggregated_results[name]['macro_f1'].append(macro_f1)
         aggregated_results[name]['gmean'].append(gmean)
         aggregated_results[name]['auc'].append(auc)
 
-metrics = ['accuracy', 'macro_precision', 'macro_recall', 'macro_f1', 'gmean', 'auc']
+metrics = ['gmean', 'auc']
 
 results_data = []
 
@@ -96,7 +85,7 @@ results_df = results_df[column_order]
 print("\n Results (mean ± std):\n")
 print(results_df)
 
-output_file = 'Experiment1/7YModel_Model_test.xlsx'
+output_file = '7YModel_Model_test.xlsx'
 with pd.ExcelWriter(output_file) as writer:
     results_df.to_excel(writer, sheet_name='Statistics', index=False)
 
