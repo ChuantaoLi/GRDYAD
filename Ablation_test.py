@@ -1,19 +1,19 @@
+"""Ablation experiment code"""
 import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, roc_auc_score
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_X_y
 import warnings
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, accuracy_score
 from sklearn.model_selection import train_test_split
 import os
 
-os.environ["LOKY_MAX_CPU_COUNT"] = "8"  # A maximum of 8 CPU cores are used
-warnings.filterwarnings("ignore", category=ConvergenceWarning)  # Ignoring convergence warnings
-warnings.filterwarnings("ignore", category=UserWarning)  # Ignore user-level warnings
+os.environ["LOKY_MAX_CPU_COUNT"] = "8"
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class OverSample(BaseEstimator, TransformerMixin):
@@ -192,7 +192,6 @@ def ada_boost_train_dynamic(X, y, num_iter=30, random_state=42, undersample_meth
 
     classes, counts = np.unique(y, return_counts=True)
     minority_class = classes[np.argmin(counts)]
-    majority_class = classes[np.argmax(counts)]
 
     # Calculate the sample confidence
     for i in range(1, num_iter + 1):
@@ -287,7 +286,6 @@ def calculate_gmean(y_true, y_pred):
 
 def run_ablation_experiments(X_train, y_train, X_test, y_test, random_state):
     experiment_conditions = [
-        {'name': 'AdaBoost', 'under': 'none', 'over': 'none'},
         {'name': 'Only Random Undersampled', 'under': 'random', 'over': 'none'},
         {'name': 'Only Dynamic Undersampled', 'under': 'dynamic', 'over': 'none'},
         {'name': 'Only SMOTE', 'under': 'none', 'over': 'smote'},
@@ -295,7 +293,7 @@ def run_ablation_experiments(X_train, y_train, X_test, y_test, random_state):
         {'name': 'Random Undersampled + SMOTE', 'under': 'random', 'over': 'smote'},
     ]
 
-    all_results = {condition['name']: {'Accuracy': [], 'Precision': [], 'Recall': [], 'F1': [], 'AUC': [], 'G-Mean': []}
+    all_results = {condition['name']: {'AUC': [], 'G-Mean': []}
                    for condition in experiment_conditions}
 
     for condition in experiment_conditions:
@@ -309,17 +307,9 @@ def run_ablation_experiments(X_train, y_train, X_test, y_test, random_state):
         )
         preds = ada_classify(X_test, classifiers, betas, label_map)
 
-        acc = accuracy_score(y_test, preds)
-        macro_precision = precision_score(y_test, preds, average='macro', zero_division=0)
-        macro_recall = recall_score(y_test, preds, average='macro', zero_division=0)
-        macro_f1 = f1_score(y_test, preds, average='macro', zero_division=0)
         auc = roc_auc_score(y_test, preds)
         gmean = calculate_gmean(y_test, preds)
 
-        all_results[condition['name']]['Accuracy'].append(acc)
-        all_results[condition['name']]['Precision'].append(macro_precision)
-        all_results[condition['name']]['Recall'].append(macro_recall)
-        all_results[condition['name']]['F1'].append(macro_f1)
         all_results[condition['name']]['G-Mean'].append(gmean)
         all_results[condition['name']]['AUC'].append(auc)
 
@@ -329,16 +319,16 @@ def run_ablation_experiments(X_train, y_train, X_test, y_test, random_state):
 if __name__ == '__main__':
 
     data = pd.read_csv('Experiment1/7Ydata.csv').iloc[:, 1:]
+    # The first column is the patient number, which does not need to be read
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
 
     final_results = {
-        'AdaBoost': {'Accuracy': [], 'Precision': [], 'Recall': [], 'F1': [], 'AUC': [], 'G-Mean': []},
-        'Only Random Undersampled': {'Accuracy': [], 'Precision': [], 'Recall': [], 'F1': [], 'AUC': [], 'G-Mean': []},
-        'Only Dynamic Undersampled': {'Accuracy': [], 'Precision': [], 'Recall': [], 'F1': [], 'AUC': [], 'G-Mean': []},
-        'Only SMOTE': {'Accuracy': [], 'Precision': [], 'Recall': [], 'F1': [], 'AUC': [], 'G-Mean': []},
-        'Only Dynamic Oversampled': {'Accuracy': [], 'Precision': [], 'Recall': [], 'F1': [], 'AUC': [], 'G-Mean': []},
-        'Random Undersampled + SMOTE': {'Accuracy': [], 'Precision': [], 'Recall': [], 'F1': [], 'AUC': [], 'G-Mean': []}
+        'Only Random Undersampled': {'AUC': [], 'G-Mean': []},
+        'Only Dynamic Undersampled': {'AUC': [], 'G-Mean': []},
+        'Only SMOTE': {'AUC': [], 'G-Mean': []},
+        'Only Dynamic Oversampled': {'AUC': [], 'G-Mean': []},
+        'Random Undersampled + SMOTE': {'AUC': [], 'G-Mean': []}
     }
 
     for run in range(5):
@@ -361,14 +351,6 @@ if __name__ == '__main__':
     for condition_name, metrics in final_results.items():
         condition_stats = {
             'Condition': condition_name,
-            'Accuracy_Mean': np.mean(metrics['Accuracy']),
-            'Accuracy_Std': np.std(metrics['Accuracy']),
-            'Precision_Mean': np.mean(metrics['Precision']),
-            'Precision_Std': np.std(metrics['Precision']),
-            'Recall_Mean': np.mean(metrics['Recall']),
-            'Recall_Std': np.std(metrics['Recall']),
-            'F1_Mean': np.mean(metrics['F1']),
-            'F1_Std': np.std(metrics['F1']),
             'G-Mean_Mean': np.mean(metrics['G-Mean']),
             'G-Mean_Std': np.std(metrics['G-Mean']),
             'AUC_Mean': np.mean(metrics['AUC']),
@@ -380,10 +362,6 @@ if __name__ == '__main__':
             raw_data.append({
                 'Condition': condition_name,
                 'Run': run_idx + 1,
-                'Accuracy': metrics['Accuracy'][run_idx],
-                'Precision': metrics['Precision'][run_idx],
-                'Recall': metrics['Recall'][run_idx],
-                'F1': metrics['F1'][run_idx],
                 'G-Mean': metrics['G-Mean'][run_idx],
                 'AUC': metrics['AUC'][run_idx]
             })
@@ -394,7 +372,7 @@ if __name__ == '__main__':
     print("\n==== Results (mean ± std) ====")
     print(stats_df)
 
-    output_file = 'Experiment1/7Ydata_Ablation.xlsx'
+    output_file = '7Ydata_Ablation.xlsx'
     with pd.ExcelWriter(output_file) as writer:
         stats_df.to_excel(writer, sheet_name='Statistics', index=False)
         raw_df.to_excel(writer, sheet_name='Raw_Data', index=False)
