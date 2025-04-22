@@ -6,5 +6,5 @@ $\qquad$ In the `Experiment1` folder two real diagnostic return visit datasets f
 
 ## Code
 
-$\qquad$ `Ablation_test.py` is the ablation experiment code for the IHD dataset. `AdaBoost.py` is the code for traditional AdaBoost. `DSAD.py` contains dynamic oversampling and dynamic undersampling code. `GRDSAD.py` is the Model code proposed in this study. `Model_test.py` is the code for the comparison experiment of multiple Machine Learning models on the IHD dataset.
+$\qquad$ `Ablation_test.py` is the ablation experiment code for the IHD dataset. `AdaBoost.py` is the code for traditional AdaBoost. `DSAD.py` contains dynamic oversampling and dynamic undersampling code. `GRDSAD.py` is the Model code proposed in this study. `Model_test.py` is the code for the comparison experiment of multiple Machine Learning models on the IHD dataset. The Results of all experiments are recorded in `results.xlsx`, and `requirements.txt` is the version of the code import library.
 
