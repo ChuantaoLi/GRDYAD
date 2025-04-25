@@ -25,7 +25,7 @@ def calculate_metrics(y_true, y_pred):
     return auc, gmean
 
 
-data = pd.read_csv('Experiment1/7Ydata.csv').iloc[:, 1:]
+data = pd.read_csv('Experiment1/7Ydata.csv')
 X = data.iloc[:, :-1].values
 y = data.iloc[:, -1].values
 
