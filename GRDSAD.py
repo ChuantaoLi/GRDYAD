@@ -108,14 +108,27 @@ def construct_graph(X, y, t=1.0):
     return G, L
 
 
-def graph_regularized_projection(X, L, gamma=1e-2, d=8):
+def graph_regularized_projection(X, L, gamma=1e-2, d=None):
     # The graph Laplacian matrix is used for feature dimensionality
     # Reduction to emphasize the local geometric structure of the data
     XLX = X.T @ L @ X
     A = XLX + gamma * np.eye(X.shape[1])
     eigvals, eigvecs = np.linalg.eigh(A)
-    idx = np.argsort(eigvals)[:d]
-    return eigvecs[:, idx]
+
+    # Sort eigenvalues in ascending order (smallest first)
+    idx = np.argsort(eigvals)
+    eigvals = eigvals[idx]
+    eigvecs = eigvecs[:, idx]
+
+    # If d is not specified, select dimensions capturing 95% of "energy"
+    if d is None:
+        # Normalize eigenvalues to represent "energy"
+        energy = np.cumsum(eigvals) / np.sum(eigvals)
+        d = np.argmax(energy >= 0.8) + 1
+        d = max(1, min(d, X.shape[1]))  # Ensure 1 <= d <= original dim
+
+    # Select the smallest d eigenvalues (minimizing the Laplacian objective)
+    return eigvecs[:, :d]
 
 
 def stump_classify(data_matrix, dim, thresh, inequal):
@@ -206,7 +219,7 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
         groups, w_norm = compute_group_weights(H, i, num_iter)
 
         if imbalance_ratio > 4:
-            Ntarget = int(N_minority * 1.2)
+            Ntarget = int(N_minority * 1)
         else:
             Ntarget = N_minority
 
@@ -240,8 +253,7 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
 
         # Build graph and Laplacian matrix, perform graph regularized projection
         G, L = construct_graph(X_res, y_res)
-        d_proj = min(X.shape[1], 8)
-        P = graph_regularized_projection(X_res, L, gamma=1e-2, d=d_proj)
+        P = graph_regularized_projection(X_res, L, gamma=1e-2, d=None)
         X_proj = X_res @ P
         X_full_proj = X @ P
 
@@ -311,15 +323,48 @@ def run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test):
 
 
 if __name__ == '__main__':
-    
     '''Read Experiment1 datasets'''
-    data = pd.read_csv('Experiment1/10Ydata.csv').iloc[:, 1:]
-    # The first column is the patient number, which does not need to be read
+    data = pd.read_csv('Experiment1/Framingham.csv')
+    data = data.dropna()
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
     results = run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.3)
 
     '''Read Experiment2 datasets'''
+    # ggmean = []
+    # aauc = []
+    #
+    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-1tra.dat')
+    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-1tst.dat')
+    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
+    # ggmean.append(results['gmean'][0])
+    # aauc.append(results['auc'][0])
+    #
+    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-2tra.dat')
+    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-2tst.dat')
+    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
+    # ggmean.append(results['gmean'][0])
+    # aauc.append(results['auc'][0])
+    #
+    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-3tra.dat')
+    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-3tst.dat')
+    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
+    # ggmean.append(results['gmean'][0])
+    # aauc.append(results['auc'][0])
+    #
+    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-4tra.dat')
+    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-4tst.dat')
+    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
+    # ggmean.append(results['gmean'][0])
+    # aauc.append(results['auc'][0])
+    #
     # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-5tra.dat')
     # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-5tst.dat')
     # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
+    # ggmean.append(results['gmean'][0])
+    # aauc.append(results['auc'][0])
+    #
+    # print('avg_gmean: %.3f' % (sum(ggmean) / 5))
+    # print('std_gmean: %.3f' % np.std(ggmean))
+    # print('avg_auc: %.3f' % (sum(aauc) / 5))
+    # print('std_auc: %.3f' % np.std(aauc))
