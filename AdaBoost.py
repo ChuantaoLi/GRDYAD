@@ -111,8 +111,7 @@ def calculate_gmean(y_true, y_pred):
 
 
 if __name__ == '__main__':
-    data = pd.read_csv('Experiment1/7Ydata.csv').iloc[:, 1:]
-    # The first column is the patient number, which does not need to be read
+    data = pd.read_csv('Experiment1/7Ydata.csv')
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
 
