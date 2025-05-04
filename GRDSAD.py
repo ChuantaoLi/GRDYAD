@@ -92,7 +92,7 @@ class OverSample:
         return np.vstack([X, synthetic_X]), np.concatenate([y, synthetic_y])
 
 
-def construct_graph(X, y, t=1.0):
+def construct_graph(X, y, para):
     # A graph and its Laplacian matrix are constructed based on the input feature data and labels
     n = len(X)
     G = np.zeros((n, n))
@@ -102,17 +102,17 @@ def construct_graph(X, y, t=1.0):
         for j in range(n):
             if y[i] == y[j]:
                 dist = np.linalg.norm(X[i] - X[j]) ** 2
-                G[i, j] = np.exp(-dist / t)  # Gaussian kernel to calculate similarity
+                G[i, j] = np.exp(-dist / para['rho'])  # Gaussian kernel to calculate similarity
     D = np.diag(G.sum(axis=1))
     L = D - G  # Laplacian matrix
     return G, L
 
 
-def graph_regularized_projection(X, L, gamma=1e-2, d=None):
+def graph_regularized_projection(X, L, para):
     # The graph Laplacian matrix is used for feature dimensionality
     # Reduction to emphasize the local geometric structure of the data
     XLX = X.T @ L @ X
-    A = XLX + gamma * np.eye(X.shape[1])
+    A = XLX + para['gamma'] * np.eye(X.shape[1])
     eigvals, eigvecs = np.linalg.eigh(A)
 
     # Sort eigenvalues in ascending order (smallest first)
@@ -121,11 +121,9 @@ def graph_regularized_projection(X, L, gamma=1e-2, d=None):
     eigvecs = eigvecs[:, idx]
 
     # If d is not specified, select dimensions capturing 95% of "energy"
-    if d is None:
-        # Normalize eigenvalues to represent "energy"
-        energy = np.cumsum(eigvals) / np.sum(eigvals)
-        d = np.argmax(energy >= 0.8) + 1
-        d = max(1, min(d, X.shape[1]))  # Ensure 1 <= d <= original dim
+    energy = np.cumsum(eigvals) / np.sum(eigvals)
+    d = np.argmax(energy >= para['d']) + 1
+    d = max(1, min(d, X.shape[1]))  # Ensure 1 <= d <= original dim
 
     # Select the smallest d eigenvalues (minimizing the Laplacian objective)
     return eigvecs[:, :d]
@@ -161,7 +159,7 @@ def build_stump(X, y, D):
     return best_stump, min_err, best_pred
 
 
-def compute_group_weights(H, iteration, num_iter):
+def compute_group_weights(H, iteration, num_iter, para):
     # Compute group weights based on the current iteration and the number of iterations
     boundary_threshold = 0.6
     bins = [0, 0.4, boundary_threshold, 1.0]
@@ -176,8 +174,7 @@ def compute_group_weights(H, iteration, num_iter):
 
     i, n = iteration, num_iter
     alpha = np.tan((i - 1) * np.pi / (2 * n))
-    gamma = 0.1
-    beta = 1 / (1 + np.exp(-gamma * ((2 * i / n) - 1)))
+    beta = 1 / (1 + np.exp(-para['eta'] * ((2 * i / n) - 1)))
 
     delta = np.zeros(3)
     for j in range(3):
@@ -191,7 +188,7 @@ def compute_group_weights(H, iteration, num_iter):
     return groups, w_norm
 
 
-def ada_boost_train_dynamic(X, y, num_iter, random_state):
+def ada_boost_train_dynamic(X, y, num_iter, random_state, para):
     # Train the AdaBoost classifier with dynamic sampling
     classes = np.unique(y)
     pos, neg = classes[0], classes[1]
@@ -216,10 +213,10 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
         H = 1 - (P_correct - P_wrong)
         H = H / 2.0
 
-        groups, w_norm = compute_group_weights(H, i, num_iter)
+        groups, w_norm = compute_group_weights(H, i, num_iter, para)
 
         if imbalance_ratio > 4:
-            Ntarget = int(N_minority * 1)
+            Ntarget = int(N_minority * 1.2)
         else:
             Ntarget = N_minority
 
@@ -252,8 +249,8 @@ def ada_boost_train_dynamic(X, y, num_iter, random_state):
             X_res, y_res = X_group, y_group
 
         # Build graph and Laplacian matrix, perform graph regularized projection
-        G, L = construct_graph(X_res, y_res)
-        P = graph_regularized_projection(X_res, L, gamma=1e-2, d=None)
+        G, L = construct_graph(X_res, y_res, para)
+        P = graph_regularized_projection(X_res, L, para)
         X_proj = X_res @ P
         X_full_proj = X @ P
 
@@ -283,14 +280,14 @@ def ada_classify(X, classifiers, betas, label_map):
     return np.where(pred_enc == 1, label_map[1], label_map[-1])
 
 
-def run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.3):
+def run_repeated_holdout(X, y, random_state, repeat, test_size, para):
     # Run repeated holdout cross-validation for Experiment1 datasets experiment
     metrics = {'gmean': [], 'auc': []}
 
     for i in range(repeat):
         rs = random_state + i
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=rs, stratify=y)
-        classifiers, betas, label_map = ada_boost_train_dynamic(X_train, y_train, num_iter=30, random_state=rs)
+        classifiers, betas, label_map = ada_boost_train_dynamic(X_train, y_train, 30, rs, para)
         preds = ada_classify(X_test, classifiers, betas, label_map)
 
         metrics['gmean'].append(calculate_gmean(y_test, preds))
@@ -303,15 +300,16 @@ def run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.3):
     for k in metrics:
         mean, std = np.mean(metrics[k]), np.std(metrics[k])
         results[k] = (mean, std)
-        print(f"{k.title()}: {mean:.4f} ± {std:.4f}")
+        print(f"{k.title()}: {mean:.3f}±{std:.3f}")
     return results
 
 
-def run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test):
+def run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test, para):
     # For KEEL datasets, because the training and testing sets are already given
+    print(para)
     metrics = {'gmean': [], 'auc': []}
 
-    clf, betas, lm = ada_boost_train_dynamic(X_train, y_train, 30, random_state=42)
+    clf, betas, lm = ada_boost_train_dynamic(X_train, y_train, 30, 42, para)
     preds = ada_classify(X_test, clf, betas, lm)
 
     metrics['gmean'].append(calculate_gmean(y_test, preds))
@@ -324,47 +322,81 @@ def run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test):
 
 if __name__ == '__main__':
     '''Read Experiment1 datasets'''
-    data = pd.read_csv('Experiment1/Framingham.csv')
-    data = data.dropna()
-    X = data.iloc[:, :-1].values
-    y = data.iloc[:, -1].values
-    results = run_repeated_holdout(X, y, random_state=42, repeat=5, test_size=0.3)
+    # data = pd.read_csv('Experiment1/10Ydata.csv')
+    # data = data.dropna()
+    # X = data.iloc[:, :-1].values
+    # y = data.iloc[:, -1].values
+    # para = {'eta': 0.1, 'rho': 1, 'gamma': 1.5, 'd': 0.3}
+    # results = run_repeated_holdout(X, y, 42, 5, 0.3, para)
 
     '''Read Experiment2 datasets'''
-    # ggmean = []
-    # aauc = []
-    #
-    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-1tra.dat')
-    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-1tst.dat')
-    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
-    # ggmean.append(results['gmean'][0])
-    # aauc.append(results['auc'][0])
-    #
-    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-2tra.dat')
-    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-2tst.dat')
-    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
-    # ggmean.append(results['gmean'][0])
-    # aauc.append(results['auc'][0])
-    #
-    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-3tra.dat')
-    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-3tst.dat')
-    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
-    # ggmean.append(results['gmean'][0])
-    # aauc.append(results['auc'][0])
-    #
-    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-4tra.dat')
-    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-4tst.dat')
-    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
-    # ggmean.append(results['gmean'][0])
-    # aauc.append(results['auc'][0])
-    #
-    # X_train, y_train = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-5tra.dat')
-    # X_test, y_test = load_keel_dat('Experiment2/yeast3-5-fold/yeast3-5-5tst.dat')
-    # results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test)
-    # ggmean.append(results['gmean'][0])
-    # aauc.append(results['auc'][0])
-    #
-    # print('avg_gmean: %.3f' % (sum(ggmean) / 5))
-    # print('std_gmean: %.3f' % np.std(ggmean))
-    # print('avg_auc: %.3f' % (sum(aauc) / 5))
-    # print('std_auc: %.3f' % np.std(aauc))
+    datasets = [
+        {'name': 'ecoli-0_vs_1', 'params': {'eta': 0.1, 'rho': 1, 'gamma': 1, 'd': 0.1}},
+        {'name': 'ecoli1', 'params': {'eta': 0.1, 'rho': 1, 'gamma': 1, 'd': 0.8}},
+        {'name': 'ecoli2', 'params': {'eta': 0.5, 'rho': 1.2, 'gamma': 0.1, 'd': 0.5}},
+        {'name': 'ecoli3', 'params': {'eta': 0.1, 'rho': 1, 'gamma': 0.1, 'd': 0.8}},
+        {'name': 'haberman', 'params': {'eta': 0.3, 'rho': 1.4, 'gamma': 0.1, 'd': 0.4}},
+        {'name': 'new-thyroid1', 'params': {'eta': 0.4, 'rho': 1.4, 'gamma': 0.05, 'd': 0.1}},
+        {'name': 'new-thyroid2', 'params': {'eta': 0.1, 'rho': 1, 'gamma': 0.05, 'd': 0.8}},
+        {'name': 'yeast3', 'params': {'eta': 0.5, 'rho': 2, 'gamma': 0.5, 'd': 0.3}}
+    ]
+
+    all_results = {}
+
+
+    def format_result(values):
+        return f"{np.mean(values):.3f}±{np.std(values):.3f}"
+
+
+    def run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test, para):
+        classifiers, betas, label_map = ada_boost_train_dynamic(
+            X_train, y_train,
+            num_iter=30,
+            random_state=42,
+            para=para
+        )
+
+        preds = ada_classify(X_test, classifiers, betas, label_map)
+        return {
+            'gmean': [calculate_gmean(y_test, preds)],
+            'auc': [roc_auc_score(y_test, preds)]
+        }
+
+
+    for dataset in datasets:
+        print(f'\n==== Processing Dataset: {dataset["name"]} ====')
+        print(f'Parameters: {dataset["params"]}')
+
+        data_folder = f'Experiment2/{dataset["name"]}-5-fold'
+        ggmean, aauc = [], []
+
+        for i in range(1, 6):
+            X_train, y_train = load_keel_dat(os.path.join(data_folder, f'{dataset["name"]}-5-{i}tra.dat'))
+            X_test, y_test = load_keel_dat(os.path.join(data_folder, f'{dataset["name"]}-5-{i}tst.dat'))
+
+            results = run_repeated_holdout_have_train_test(X_train, y_train, X_test, y_test, dataset['params'])
+            ggmean.append(results['gmean'][0])
+            aauc.append(results['auc'][0])
+            print(f'Fold {i}: G-Mean={results["gmean"][0]:.3f}, AUC={results["auc"][0]:.3f}')
+
+        all_results[dataset["name"]] = {
+            'G-Mean': ggmean,
+            'AUC': aauc,
+            'Parameters': dataset['params']
+        }
+
+    print('\n' + '=' * 50)
+    print('Final Results (Mean±Std, 3 decimal places)')
+    print('=' * 50)
+
+    results_table = []
+    for name, res in all_results.items():
+        results_table.append({
+            'Dataset': name,
+            'Parameters': str(res['Parameters']),
+            'G-Mean': format_result(res['G-Mean']),
+            'AUC': format_result(res['AUC'])
+        })
+
+    df = pd.DataFrame(results_table)
+    print(df[['Dataset', 'G-Mean', 'AUC']].to_string(index=False))
