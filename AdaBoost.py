@@ -5,6 +5,24 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
+import warnings
+import os
+
+os.environ["LOKY_MAX_CPU_COUNT"] = "8"
+warnings.filterwarnings("ignore", category=UserWarning)
+
+
+def load_keel_dat(file_path):
+    # This function loads a KEEL dataset from a .dat file
+    with open(file_path, 'r') as f:
+        lines = [line.strip() for line in f if not line.startswith('@')]
+    data = [line.split(',') for line in lines if line]
+    df = pd.DataFrame(data)
+    X = df.iloc[:, :-1].apply(pd.to_numeric, errors='coerce').values
+    y = df.iloc[:, -1].astype('category').cat.codes.values
+    if len(np.unique(y)) != 2:
+        raise ValueError("NOT BINARY CLASSIFICATION")
+    return X, y
 
 def load_data(file_path):
     # Read dat file
@@ -110,20 +128,71 @@ def calculate_gmean(y_true, y_pred):
     return np.sqrt(sens * spec)
 
 
+# if __name__ == '__main__':
+#     data = pd.read_csv('Experiment1/Framingham.csv')
+#     X = data.iloc[:, :-1].values
+#     y = data.iloc[:, -1].values
+#
+#     results = {'gmean': [], 'auc': []}
+#
+#     for run in range(5):
+#         print(f'====  {run + 1} Iteration ====')
+#
+#         random_seed = run
+#         np.random.seed(random_seed)
+#
+#         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=random_seed)
+#
+#         classifiers, betas, label_map = ada_boost_train_ds(X_train, y_train, num_it=30)
+#         preds = ada_classify(X_test, classifiers, betas, label_map)
+#
+#         gmean = calculate_gmean(y_test, preds)
+#         auc = roc_auc_score(y_test, preds)
+#
+#         results['gmean'].append(gmean)
+#         results['auc'].append(auc)
+#
+#         print(f'G-Mean: {gmean:.4f}')
+#         print(f'AUC: {auc:.4f}')
+#         print()
+#
+#     stats_data = []
+#     for metric, scores in results.items():
+#         stats_data.append({
+#             'Metric': metric.capitalize(),
+#             'Mean': np.mean(scores),
+#             'Std': np.std(scores)
+#         })
+#
+#     stats_df = pd.DataFrame(stats_data)
+#
+#     raw_data = []
+#     for run in range(5):
+#         for metric in results.keys():
+#             raw_data.append({
+#                 'Run': run + 1,
+#                 'Metric': metric.capitalize(),
+#                 'Value': results[metric][run]
+#             })
+#
+#     raw_df = pd.DataFrame(raw_data)
+#
+#     print('==== Results ====')
+#     print(stats_df)
+
 if __name__ == '__main__':
-    data = pd.read_csv('Experiment1/7Ydata.csv')
-    X = data.iloc[:, :-1].values
-    y = data.iloc[:, -1].values
+    data_folder = 'Experiment2/ecoli-0_vs_1-5-fold'
 
-    results = {'gmean': [], 'auc': []}
+    results = {'G-Mean': [], 'AUC': []}
 
-    for run in range(5):
-        print(f'====  {run + 1} Iteration ====')
+    for i in range(1, 6):  # 使用5折交叉验证
+        print(f'====  Fold {i} ====')
 
-        random_seed = run
-        np.random.seed(random_seed)
+        train_file = os.path.join(data_folder, f'ecoli-0_vs_1-5-{i}tra.dat')
+        test_file = os.path.join(data_folder, f'ecoli-0_vs_1-5-{i}tst.dat')
 
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=random_seed)
+        X_train, y_train = load_keel_dat(train_file)
+        X_test, y_test = load_keel_dat(test_file)
 
         classifiers, betas, label_map = ada_boost_train_ds(X_train, y_train, num_it=30)
         preds = ada_classify(X_test, classifiers, betas, label_map)
@@ -131,33 +200,40 @@ if __name__ == '__main__':
         gmean = calculate_gmean(y_test, preds)
         auc = roc_auc_score(y_test, preds)
 
-        results['gmean'].append(gmean)
-        results['auc'].append(auc)
+        results['G-Mean'].append(gmean)
+        results['AUC'].append(auc)
 
-        print(f'G-Mean: {gmean:.4f}')
-        print(f'AUC: {auc:.4f}')
+        print(f'G-Mean: {gmean:.3f}')
+        print(f'AUC: {auc:.3f}')
         print()
 
+    # 计算统计结果并格式化输出
     stats_data = []
     for metric, scores in results.items():
+        mean_val = np.mean(scores)
+        std_val = np.std(scores)
         stats_data.append({
-            'Metric': metric.capitalize(),
-            'Mean': np.mean(scores),
-            'Std': np.std(scores)
+            'Metric': metric,
+            'Result': f"{mean_val:.3f}±{std_val:.3f}",
+            'Mean': f"{mean_val:.3f}",
+            'Std': f"{std_val:.3f}"
         })
 
     stats_df = pd.DataFrame(stats_data)
 
+    # 原始数据记录
     raw_data = []
-    for run in range(5):
+    for i in range(5):
         for metric in results.keys():
             raw_data.append({
-                'Run': run + 1,
-                'Metric': metric.capitalize(),
-                'Value': results[metric][run]
+                'Fold': i + 1,
+                'Metric': metric,
+                'Value': f"{results[metric][i]:.3f}"
             })
 
     raw_df = pd.DataFrame(raw_data)
 
-    print('==== Results ====')
-    print(stats_df)
+    print('==== Final Results ====')
+    print(stats_df[['Metric', 'Result']].to_string(index=False))
+    print('\n==== Raw Data ====')
+    print(raw_df.to_string(index=False))
