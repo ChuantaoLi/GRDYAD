@@ -51,4 +51,4 @@ In the Results folder, `7Ydata.xlsx`, `10Ydata.xlsx`, `SPECTF.xlsx`, and `Framin
 | LexiBoostM1, LexiBoostM2, DualLexiBoost | S. Datta, S. Nag, and S. Das, “Boosting with lexicographic  programming: Addressing class imbalance without cost tuning,” IEEE Trans.  Knowl. Data Eng., vol. 32, no. 5, pp. 883–897, May 2020. |
 |               JanEnsemble               | Z. Jan, J. C. Munos, and A. Ali, “A novel method for creating an  optimized ensemble classifier by introducing cluster size reduction and  diversity,” IEEE Trans. Knowl. Data Eng., vol. 34, no. 7, pp. 3072–3081, Jul.  2022. |
 
-$\qquad$In addition, `Heart parameter.xlsx` and `KEEL parameter.xlsx` contain the experimental results of the Parameter sensitivity analysis.
+In addition, `Heart parameter.xlsx` and `KEEL parameter.xlsx` contain the experimental results of the Parameter sensitivity analysis.
