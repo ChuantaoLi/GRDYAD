@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import confusion_matrix,roc_auc_score
+from sklearn.metrics import confusion_matrix, roc_auc_score
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_X_y
@@ -14,6 +14,19 @@ import os
 os.environ["LOKY_MAX_CPU_COUNT"] = "8"
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
+
+
+def load_keel_dat(file_path):
+    # This function loads a KEEL dataset from a .dat file
+    with open(file_path, 'r') as f:
+        lines = [line.strip() for line in f if not line.startswith('@')]
+    data = [line.split(',') for line in lines if line]
+    df = pd.DataFrame(data)
+    X = df.iloc[:, :-1].apply(pd.to_numeric, errors='coerce').values
+    y = df.iloc[:, -1].astype('category').cat.codes.values
+    if len(np.unique(y)) != 2:
+        raise ValueError("NOT BINARY CLASSIFICATION")
+    return X, y
 
 
 class OverSample(BaseEstimator, TransformerMixin):
@@ -121,7 +134,7 @@ def build_stump(X, y, D):
     return best_stump, min_err, best_est
 
 
-def compute_group_weights(H, iteration, num_iter):
+def compute_group_weights(H, iteration, num_iter, para):
     # Compute group weights based on the current iteration and the number of iterations
     boundary_threshold = 0.6
     bins = [0, 0.4, boundary_threshold, 1.0]
@@ -137,8 +150,7 @@ def compute_group_weights(H, iteration, num_iter):
     i, n = iteration, num_iter
     alpha = np.tan((i - 1) * np.pi / (2 * n))
 
-    gamma = 0.1
-    beta = 1 / (1 + np.exp(-gamma * ((2 * i / n) - 1)))
+    beta = 1 / (1 + np.exp(-para['eta'] * ((2 * i / n) - 1)))
 
     delta = np.zeros(3)
     for j in range(3):
@@ -152,7 +164,7 @@ def compute_group_weights(H, iteration, num_iter):
     return groups, w_norm
 
 
-def ada_boost_train_dynamic(X, y, num_iter=30):
+def ada_boost_train_dynamic(X, y, num_iter, para):
     # Train the AdaBoost classifier with dynamic sampling
     classes = np.unique(y)
     if len(classes) != 2:
@@ -168,6 +180,10 @@ def ada_boost_train_dynamic(X, y, num_iter=30):
 
     classes, counts = np.unique(y, return_counts=True)
     minority_class = classes[np.argmin(counts)]
+    majority_class = classes[np.argmax(counts)]
+    N_minority = sum(y == minority_class)
+    N_majority = sum(y == majority_class)
+    imbalance_ratio = N_majority / N_minority
 
     for i in range(1, num_iter + 1):
         p = 1 / (1 + np.exp(-agg_est))
@@ -176,10 +192,12 @@ def ada_boost_train_dynamic(X, y, num_iter=30):
         H = 1 - (P_correct - P_wrong)
         H = H / 2.0
 
-        groups, w_norm = compute_group_weights(H, i, num_iter)
+        groups, w_norm = compute_group_weights(H, i, num_iter, para)
         N_minority = sum(y == minority_class)
-
-        Ntarget = int(N_minority * 1.2)
+        if imbalance_ratio > 4:
+            Ntarget = int(N_minority * 1.2)
+        else:
+            Ntarget = N_minority
 
         maj_idx = np.where(y_enc == -1)[0]
         maj_groups = groups[maj_idx]
@@ -239,9 +257,12 @@ def calculate_gmean(y_true, y_pred):
 
 if __name__ == '__main__':
 
-    data = pd.read_csv('Experiment1/7Ydata.csv')
+    data = pd.read_csv(r'Experiment1/Framingham.csv')
+    data = data.dropna()
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
+
+    para = {'eta': 0.3, 'rho': 1.1, 'gamma': 3, 'd': 0.5}
 
     results = {
         'gmean': [],
@@ -256,7 +277,7 @@ if __name__ == '__main__':
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=random_seed)
 
-        classifiers, betas, label_map = ada_boost_train_dynamic(X_train, y_train, num_iter=30)
+        classifiers, betas, label_map = ada_boost_train_dynamic(X_train, y_train, 30, para)
         preds = ada_classify(X_test, classifiers, betas, label_map)
 
         gmean = calculate_gmean(y_test, preds)
@@ -291,4 +312,69 @@ if __name__ == '__main__':
     raw_df = pd.DataFrame(raw_data)
 
     print('==== Result ====')
-    print(stats_df)
+    for _, row in stats_df.iterrows():
+        metric = row['Metric']
+        mean = f"{row['Mean']:.3f}"
+        std = f"{row['Std']:.3f}"
+        print(f"{metric}: {mean}±{std}")
+
+# if __name__ == '__main__':
+#     data_folder = 'Experiment2/ecoli-0_vs_1-5-fold'
+#
+#     # 初始化结果存储
+#     final_results = {
+#         'G-Mean': [],
+#         'AUC': []
+#     }
+#
+#     # 5折交叉验证
+#     for i in range(1, 6):
+#         print(f'==== Fold {i} ====')
+#
+#         # 加载数据
+#         train_file = os.path.join(data_folder, f'ecoli-0_vs_1-5-{i}tra.dat')
+#         test_file = os.path.join(data_folder, f'ecoli-0_vs_1-5-{i}tst.dat')
+#         X_train, y_train = load_keel_dat(train_file)
+#         X_test, y_test = load_keel_dat(test_file)
+#
+#         # 训练和预测
+#         classifiers, betas, label_map = ada_boost_train_dynamic(
+#             X_train, y_train,
+#             num_iter=30
+#         )
+#         preds = ada_classify(X_test, classifiers, betas, label_map)
+#
+#         # 计算指标
+#         gmean = calculate_gmean(y_test, preds)
+#         auc = roc_auc_score(y_test, preds)
+#
+#         final_results['G-Mean'].append(gmean)
+#         final_results['AUC'].append(auc)
+#
+#         print(f'G-Mean: {gmean:.3f}')
+#         print(f'AUC: {auc:.3f}\n')
+#
+#     # 计算统计结果
+#     stats_data = []
+#     for metric, values in final_results.items():
+#         mean_val = np.mean(values)
+#         std_val = np.std(values)
+#         stats_data.append({
+#             'Metric': metric,
+#             'Mean ± Std': f"{mean_val:.3f} ± {std_val:.3f}",
+#             'Mean': f"{mean_val:.3f}",
+#             'Std': f"{std_val:.3f}"
+#         })
+#
+#     # 创建DataFrame
+#     stats_df = pd.DataFrame(stats_data)
+#     raw_df = pd.DataFrame([
+#         {'Fold': i + 1, 'Metric': metric, 'Value': f"{final_results[metric][i]:.3f}"}
+#         for i in range(5) for metric in final_results.keys()
+#     ])
+#
+#     # 打印结果
+#     print('==== Final Results ====')
+#     print(stats_df[['Metric', 'Mean ± Std']].to_string(index=False))
+#     print('\n==== Detailed Results ====')
+#     print(raw_df.to_string(index=False))
